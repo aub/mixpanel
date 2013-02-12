@@ -54,6 +54,14 @@ initializer for it:
 
 Where **options** is a hash that accepts the following keys:
 
+* **insert_mixpanel_scripts** : boolean
+
+  *Default: true*
+
+  By default the Mixpanel JavaScript API library scripts are inserted into the
+  HTML. If you'd prefer to insert them yourself, set the
+  insert_mixpanel_scripts flag to false.
+
 * **insert_js_last** : boolean
 
   *Default: false*
@@ -279,6 +287,26 @@ Example:
 @mixpanel.increment 'john-doe', { :tokens => 5, :coins => -4 }
 ```
 
+### Track Charges for Revenue Directly
+
+```ruby
+@mixpanel.track_charge distinct_id, amount, time, options
+```
+
+This allows you to use the Revenue tab in your mixpanel dashboard.
+
+Example:
+
+```ruby
+@mixpanel.track_charge 'john-doe', 20.00
+```
+
+If you need to remove accidental charges for a person, you can use:
+
+```ruby
+@mixpanel.reset_charges distinct_id
+```
+
 ### Append Events To Be Tracked With Javascript
 
 *Note*: You should setup the [Rack Middleware](#rack-middleware).
@@ -415,3 +443,6 @@ end
 * [Ahmed Belal](https://github.com/AhmedBelal)
 * [Esteban Pastorino](https://github.com/kitop)
 * [Jeffrey Chu](https://github.com/jochu)
+* [Jon Pospischil] (https://github.com/pospischil)
+* [Tom Brown] (https://github.com/nottombrown)
+* [Murilo Pereira] (https://github.com/mpereira)
