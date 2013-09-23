@@ -29,6 +29,10 @@ describe Mixpanel::Tracker do
       it "should track events with properties" do
         @mixpanel.track('Sign up', { :likeable => true }, { :api_key => 'asdf' }).should == true
       end
+
+      it "should track simple events with async" do
+        @mixpanel.track("Sign up", {}, :async => true).should == true
+      end
     end
 
     context "Tracking pixel" do
@@ -41,6 +45,20 @@ describe Mixpanel::Tracker do
       end
     end
 
+    context "Redirect url" do
+      let(:url) { "http://example.com?foo=bar&bar=foo" }
+
+      it "should return a URL" do
+        @mixpanel.redirect_url("Click Email", url).should be_a(String)
+      end
+
+      it "should include a redirect" do
+        encoded_url = CGI::escape(url)
+        @mixpanel.redirect_url("Click Email", url).should include('&redirect=' + encoded_url)
+      end
+
+    end
+
     context "Importing events" do
       it "should import simple events" do
         @mixpanel.import('Sign up').should == true
@@ -51,9 +69,29 @@ describe Mixpanel::Tracker do
       end
     end
 
+    describe '#alias' do
+      it 'tracks a simple event' do
+        @mixpanel.alias('James Salter').should be true
+      end
+
+      it 'tracks a $create_alias event to the TRACK_URL' do
+        @mixpanel.should_receive(:track_event).with('$create_alias', anything, {}, Mixpanel::Event::TRACK_URL)
+        @mixpanel.alias('Phillip Dean')
+      end
+
+      it 'includes the aliased name in the properties' do
+        @mixpanel.should_receive(:track_event).with('$create_alias', { :alias => 'Cristina Wheatland' }, {}, Mixpanel::Event::TRACK_URL)
+        @mixpanel.alias('Cristina Wheatland')
+      end
+    end
+
     context "Engaging people" do
       it "should set attributes" do
         @mixpanel.set('person-a', { :email => 'me@domain.com', :likeable => false }).should == true
+      end
+
+      it "should set an attribute once" do
+        @mixpanel.set_once('person-a', { :email => 'me@domain.com', :likeable => false }).should == true
       end
 
       it "should set attributes with request properties" do
@@ -71,6 +109,14 @@ describe Mixpanel::Tracker do
       it "should reset charges" do
         @mixpanel.reset_charges('person-a').should == true
       end
+
+      it "should unset property" do
+        @mixpanel.unset('person-a', 'property').should == true
+      end
+
+      it "should delete a user from mixpanel" do
+        @mixpanel.delete('person-a').should == true
+      end
     end
   end
 
@@ -85,14 +131,18 @@ describe Mixpanel::Tracker do
       end
 
       it "should append simple events" do
-        props = { :time => Time.now, :ip => 'ASDF' }
+        time = Time.now
+        props = { :time => time, :ip => 'ASDF' }
         @mixpanel.append_track "Sign up", props
+        props[:time] = time.to_i
         mixpanel_queue_should_include(@mixpanel, "track", "Sign up", props)
       end
 
       it "should append events with properties" do
-        props = { :referer => 'http://example.com', :time => Time.now, :ip => 'ASDF' }
+        time = Time.now
+        props = { :referer => 'http://example.com', :time => time, :ip => 'ASDF' }
         @mixpanel.append_track "Sign up", props
+        props[:time] = time.to_i
         mixpanel_queue_should_include(@mixpanel, "track", "Sign up", props)
       end
 
@@ -106,15 +156,26 @@ describe Mixpanel::Tracker do
         mixpanel_queue_should_include(@mixpanel, "identify", "some@one.com")
       end
 
-      it "should allow people.identify to be called through the JS api" do
-        @mixpanel.append_people_identify "an_identity"
-        mixpanel_queue_should_include(@mixpanel, "people.identify", "an_identity")
-      end
-
       it "should allow the tracking of super properties in JS" do
         props = {:user_id => 12345, :gender => 'male'}
         @mixpanel.append_register props
         mixpanel_queue_should_include(@mixpanel, 'register', props)
+      end
+
+      it "should allow the tracking of charges in JS" do
+        @mixpanel.append_track_charge 40
+        mixpanel_queue_should_include(@mixpanel, 'people.track_charge', 40)
+      end
+
+      it "should allow alias to be called through the JS api" do
+        @mixpanel.append_alias "new_id"
+        mixpanel_queue_should_include(@mixpanel, "alias", "new_id")
+      end
+
+      it "should allow the one-time tracking of super properties in JS" do
+        props = {:user_id => 12345, :gender => 'male'}
+        @mixpanel.append_register_once props
+        mixpanel_queue_should_include(@mixpanel, 'register_once', props)
       end
     end
   end
@@ -131,7 +192,7 @@ describe Mixpanel::Tracker do
       #On most systems this will exceed the pipe buffer size
       8.times do
         9000.times do
-          w.write("\n")
+          w.write("")
         end
         sleep 0.1
       end
@@ -144,6 +205,23 @@ describe Mixpanel::Tracker do
       w.closed?.should == true
       w2 = Mixpanel::Tracker.worker
       w2.should_not == w
+    end
+  end
+
+  describe '#properties_hash' do
+    it "base64encodes json formatted data" do
+      properties = { :a => 4, :b => "foo"}
+      special_properties = ["a"]
+      hash = @mixpanel.send(:properties_hash, properties, special_properties)
+      hash.should eq({ :'$a' => 4, :b => "foo"})
+    end
+
+    it "converts Time objects into integers" do
+      time = Time.new
+      properties = { :a => time, :b => "foo"}
+      special_properties = []
+      hash = @mixpanel.send(:properties_hash, properties, special_properties)
+      hash.should eq({ :a => time.to_i, :b => "foo"})
     end
   end
 end

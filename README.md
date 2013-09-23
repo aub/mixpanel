@@ -2,16 +2,25 @@
 
 [![Build Status](https://secure.travis-ci.org/zevarito/mixpanel.png?branch=master)](http://travis-ci.org/zevarito/mixpanel)
 
+# Important News
+
+This Gem will not be maintained anymore, there is an Official gem being developed and we encourage you to use that gem from now on.
+
+We will merge PR for bugs for a little period of time, but no new features will be added.
+
+[Official Gem repository](https://github.com/mixpanel/mixpanel-ruby)
+
 ## Table of Contents
 
 - [What is Mixpanel] (#what-is-mixpanel)
 - [What does this Gem do?] (#what-does-this-gem-do)
 - [Install] (#install)
-  - [Rack Middleware] (#rack-middleware) 
+  - [Rack Middleware] (#rack-middleware)
 - [Usage] (#usage)
   - [Initialize Mixpanel] (#initialize-mixpanel)
     - [Track Events Directly](#track-events-directly)
     - [Pixel Based Event Tracking](#pixel-based-event-tracking)
+    - [Redirect Based Event Tracking](#redirect-based-event-tracking)
     - [Import Events](#import-events)
     - [Set Person Attributes Directly](#set-person-attributes-directly)
     - [Increment Person Attributes Directly](#increment-person-attributes-directly)
@@ -129,7 +138,7 @@ Where **options** is a hash that accepts the following keys:
   This allows you to use a before_filter to set these variables, redirect, and still have them only transmitted
   once.
 
-  *To enable persistence*, you must set the flag twice: here when instantiating Middleware and again when you initialize
+  *To enable persistence*, you must set the flag twice: when instantiating Middleware and here when you initialize
   the Mixpanel class.
 
 * **api_key** : string
@@ -193,10 +202,22 @@ it will automatically be converted to the correct form (e.g., `{ :os => 'Mac' }`
 
   This can be used to proxy Mixpanel API requests.
 
+* **test**: boolean
+
+  *Default: false*
+
+  Send data to a high priority rate limited queue to make testing easier
+
 Example:
 
 ```ruby
 @mixpanel.track 'Purchased credits', { :number => 5, 'First Time Buyer' => true }
+```
+
+If you would like to alias one distinct id to another, you can use the alias helper method:
+
+```ruby
+@mixpanel.alias 'Siddhartha', { distinct_id: previous_distinct_id }
 ```
 
 ### Pixel Based Event Tracking
@@ -216,7 +237,13 @@ image_tag @mixpanel.tracking_pixel("Opened Email", { :distinct_id => "bob@email.
 
 Mixpanel docs: https://mixpanel.com/docs/api-documentation/pixel-based-event-tracking
 
+### Redirect Based Event Tracking
 
+```ruby
+@mixpanel.redirect_url "Opened Email", 'http://www.example.com/' { :distinct_id => "bob@email.com", :campaign => "Retarget" }
+```
+
+This allows to track events just when a user clicks a link. It's usually useful for tracking opened emails.
 
 ### Import Events
 
@@ -317,11 +344,11 @@ If you need to remove accidental charges for a person, you can use:
 
 **event_name** and **properties** take the same form as [tracking the event directly](#track-events-directly).
 
-Note that you must call mixpanel.people.identify() in conjunction with People requests like set(). If you make set() requests before 
+Note that you must call mixpanel.identify() in conjunction with People requests like set(). If you make set() requests before
 you identify the user, the change will not be immediately sent to Mixpanel. Mixpanel will wait for you to call identify() and then send the accumulated changes.
 
 ```ruby
-  @mixpanel.append_people_identify distinct_id
+  @mixpanel.append_identify distinct_id
   @mixpanel.append_set properties
 ```
 
@@ -334,7 +361,19 @@ you identify the user, the change will not be immediately sent to Mixpanel. Mixp
   @mixpanel.append("identify", "Unique Identifier")
 ```
 
+### Give people real names with Javascript
+
+*Note*: You should setup the [Rack Middleware](#rack-middleware).
+
+This gives names to people tracked in the `Stream` view:
+
+```ruby
+  @mixpanel.append("name_tag", "John Doe")
+```
+
+
 ### Prevent middleware from inserting code
+
 *Note*: Only applies when [Rack Middleware](#rack-middleware) is setup.
 
 Occasionally you may need to send a request for HTML that you don't want the middleware to alter. In your AJAX request include the header "SKIP_MIXPANEL_MIDDLEWARE" to prevent the mixpanel code from being inserted.
@@ -347,6 +386,12 @@ Occasionally you may need to send a request for HTML that you don't want the mid
     }
   });
 ```
+
+Alternatively, you can add this line of code to your controller to temporarily disable the middleware:
+
+ ```ruby
+   Mixpanel::Middleware.skip_this_request
+ ```
 
 ## Examples
 
@@ -417,12 +462,74 @@ end
   end
 ```
 
+## How to track events using Delayed Job and Rails
+Below is an example of implementing async even tracking with Delayed Job
+
+**Create a new worker**
+```ruby
+class MixpanelWorker < Struct.new(:name, :properties, :request_env)
+  def perform
+      if defined?(MIXPANEL_TOKEN)
+        @mixpanel = Mixpanel::Tracker.new(MIXPANEL_TOKEN, { :env => request_env })
+      else
+        @mixpanel = DummyMixpanel.new
+      end
+
+      @mixpanel.track(name, properties)
+  end
+end
+```
+
+**Add the following to your Application controller**
+```ruby
+class ApplicationController < ActionController::Base
+  before_filter :initialize_env
+
+  private
+  ##
+  # Initialize env for mixpanel
+  def initialize_env
+    # Similar to the Resque problem above, we need to help DJ serialize the
+    # request object.
+    @request_env = {
+      'REMOTE_ADDR' => request.env['REMOTE_ADDR'],
+      'HTTP_X_FORWARDED_FOR' => request.env['HTTP_X_FORWARDED_FOR'],
+      'rack.session' => request.env['rack.session'].to_hash,
+      'mixpanel_events' => request.env['mixpanel_events']
+    }
+  end
+```
+**You can optionally create a nice model wrapper to tidy things up**
+```ruby
+#app/models/mix_panel.rb
+class MixPanel
+  def self.track(name, properties, env)
+    # Notice we are using the 'mixpanel' queue
+		Delayed::Job.enqueue MixpanelWorker.new(name, properties, env), queue: 'mixpanel'
+	end
+end
+```
+**Sample Usage**
+```ruby
+MixPanel.track("Front Page Load", {
+                url_type: short_url.uid_type,
+                page_name: short_url.page.name,
+                distinct_id: @client_uid }, @request_env)
+```
+
 ## Supported Ruby Platforms
 
-- 1.8.7
+- 1.8.7 [Not supported anymore]
 - 1.9.2
 - 1.9.3
+- 2.0.0
 - JRuby 1.8 Mode
+- JRuby 1.9 Mode
+
+## Deprecation Notes
+
+  * 4.0.0
+    People API #append_people_identify => #append_identify
 
 ## Collaborators and Maintainers
 
@@ -446,3 +553,7 @@ end
 * [Jon Pospischil] (https://github.com/pospischil)
 * [Tom Brown] (https://github.com/nottombrown)
 * [Murilo Pereira] (https://github.com/mpereira)
+* [Marko Vasiljevic] (https://github.com/marmarko)
+* [Joel] (https://github.com/jclay)
+* [adimichele] (https://github.com/adimichele)
+* [Francis Gulotta] (https://github.com/reconbot)

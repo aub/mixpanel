@@ -1,7 +1,8 @@
-require "open-uri"
-require 'base64'
+require "uri"
+require "net/http"
 require 'json'
 require 'thread'
+require 'base64'
 
 module Mixpanel
   class Tracker
@@ -43,10 +44,12 @@ module Mixpanel
         (@env['HTTP_X_FORWARDED_FOR'] || @env['REMOTE_ADDR'] || '').split(',').last
     end
 
-    # Walk through each property and see if it is in the special_properties.  If so, change the key to have a $ in front of it.
+    # Walk through each property and see if it is in the special_properties.
+    # If so, change the key to have a $ in front of it.
     def properties_hash(properties, special_properties)
       properties.inject({}) do |props, (key, value)|
         key = "$#{key}" if special_properties.include?(key.to_s)
+        value = value.to_i if value.class == Time
         props[key.to_sym] = value
         props
       end
@@ -56,19 +59,27 @@ module Mixpanel
       Base64.encode64(JSON.generate(parameters)).gsub(/\n/,'')
     end
 
-    def request(url, async)
-      async ? send_async(url) : open(url).read
+    def post_request(url, data, async)
+      if async
+        send_async(url, data)
+      else
+        Net::HTTP.post_form(URI.parse(url), data)
+      end
     end
 
     def parse_response(response)
-      response.to_i == 1
+      if response.respond_to?(:body)
+        response.body.to_i == 1
+      else
+        response.to_i == 1
+      end
     end
 
-    def send_async(url)
+    def send_async(url, data)
       w = Mixpanel::Tracker.worker
       begin
         url << "\n"
-        w.write url
+        w.write JSON.dump(data.merge(_mixpanel_url: url))
         1
       rescue Errno::EPIPE => e
         Mixpanel::Tracker.dispose_worker w

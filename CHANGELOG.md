@@ -1,10 +1,67 @@
+September 2013
+--------------
+
+Bump: 4.0.7 Sep 6, 2013
+
+* Fix request doing GET instead POST (Jan Berdajs)
+
+Bump: 4.0.6 Sep 5, 2013
+
+* Add append_track_charge method to person.rb (Matt Angriffel)
+* Convert time property to timestamp (Francis Gulotta)
+
+August 2013
+-----------
+
+Bump: 4.0.5 Aug 26, 2013
+
+* Fix events sent async. (Eric Boehs)
+* Fix crash with chunked response and turbolinks. (Roman Shterenzon)
+
+July 2013
+---------
+
+* Ability to generate tracking links with redirect. (Francis Gulotta)
+* Skip Middleware injection on All Redirect statuses. (Francis Gulotta)
+
+May 2013
+--------
+
+* Allow to specify "test" when sending events using the HTTP interface(Roman Shterenzon)
+
+Bump: 4.0.2 May 23, 2013
+
+* Add alias helper method to event tracking (Chris Maddox)
+
+Bump: 4.0.1 May 10, 2013
+
+* Update documentation. (Paweł Gościcki)
+* Add people.set_once to middleware script. (alvarezm50)
+
+April 2013
+----------
+
+Bump: 4.0.0 Apr 18, 2013
+
+* Delete a user from mixpanel (dennisvdvliet)
+* Ability to set_once properties (Michael Glass)
+* Use mixpanel script version 2.2. Replaced person.identify with unified identify. Added person.alias. (Milo Winningham)
+
+Feb 2013
+--------
+
+Bump: 3.5.2 Feb 24, 2013
+
+* Ability to skip middleware js snippet injection. (adimichele)
+* Ability to unset a person property (Marko Vasiljevic)
+* Update DelayedJob documentation (Joel)
+
+Bump: 3.5.1 Jan 28, 2013
 
 Jan 2013
 --------
 
-* 3.5.1
-** Add option to not render mixpanel scripts (Murilo Pereira)
-
+* Add option to not render mixpanel scripts (Murilo Pereira)
 * Add support for Turbolinks (Jon Pospischil)
 * Add track_charge and reset_charges to Mixpanel::Person (Tom Brown)
 

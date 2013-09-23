@@ -3,6 +3,15 @@ require 'json'
 
 module Mixpanel
   class Middleware
+    class << self
+      attr_accessor :skip_request
+      def skip_this_request
+        @skip_request = true
+      end
+    end
+
+    @skip_request = false
+
     def initialize(app, mixpanel_token, options={})
       @app = app
       @token = mixpanel_token
@@ -18,13 +27,15 @@ module Mixpanel
       @env = env
 
       @status, @headers, @response = @app.call(env)
-      
-      if is_trackable_response?
+
+      if is_trackable_response? && !Mixpanel::Middleware.skip_request
         merge_queue! if @options[:persist]
         update_response!
         update_content_length!
         delete_event_queue!
       end
+
+      Mixpanel::Middleware.skip_request = false
 
       [@status, @headers, @response]
     end
@@ -42,7 +53,8 @@ module Mixpanel
             end
           end
         elsif is_turbolink_request? && is_html_response?
-          part.insert(part.index('</body'), render_event_tracking_scripts) unless queue.empty?
+          insert_at = part.index('</body')
+          part.insert(insert_at, render_event_tracking_scripts) unless insert_at.nil? or queue.empty?
         elsif is_ajax_request? && is_html_response?
           part.insert(0, render_event_tracking_scripts) unless queue.empty?
         elsif is_ajax_request? && is_javascript_response?
@@ -78,7 +90,7 @@ module Mixpanel
     end
 
     def is_trackable_response?
-      return false if @status == 302
+      return false if (300..399).include?(@status.to_i)
       return false if @env.has_key?("HTTP_SKIP_MIXPANEL_MIDDLEWARE")
       is_html_response? || is_javascript_response?
     end
@@ -87,17 +99,7 @@ module Mixpanel
       <<-EOT
         <!-- start Mixpanel -->
         <script type="text/javascript">
-          (function(c,a){window.mixpanel=a;var b,d,h,e;b=c.createElement("script");
-          b.type="text/javascript";b.async=!0;b.src=("https:"===c.location.protocol?"https:":"http:")+
-          '//cdn.mxpnl.com/libs/mixpanel-2.1.min.js';d=c.getElementsByTagName("script")[0];
-          d.parentNode.insertBefore(b,d);a._i=[];a.init=function(b,c,f){function d(a,b){
-          var c=b.split(".");2==c.length&&(a=a[c[0]],b=c[1]);a[b]=function(){a.push([b].concat(
-          Array.prototype.slice.call(arguments,0)))}}var g=a;"undefined"!==typeof f?g=a[f]=[]:
-          f="mixpanel";g.people=g.people||[];h=['disable','track','track_pageview','track_links',
-          'track_forms','register','register_once','unregister','identify','name_tag',
-          'set_config','people.identify','people.set','people.increment'];for(e=0;e<h.length;e++)d(g,h[e]);
-          a._i.push([b,c,f])};a.__SV=1.1;})(document,window.mixpanel||[]);
-
+          (function(e,b){if(!b.__SV){var a,f,i,g;window.mixpanel=b;a=e.createElement("script");a.type="text/javascript";a.async=!0;a.src=("https:"===e.location.protocol?"https:":"http:")+'//cdn.mxpnl.com/libs/mixpanel-2.2.min.js';f=e.getElementsByTagName("script")[0];f.parentNode.insertBefore(a,f);b._i=[];b.init=function(a,e,d){function f(b,h){var a=h.split(".");2==a.length&&(b=b[a[0]],h=a[1]);b[h]=function(){b.push([h].concat(Array.prototype.slice.call(arguments,0)))}}var c=b;"undefined"!==typeof d?c=b[d]=[]:d="mixpanel";c.people=c.people||[];c.toString=function(b){var a="mixpanel";"mixpanel"!==d&&(a+="."+d);b||(a+=" (stub)");return a};c.people.toString=function(){return c.toString(1)+".people (stub)"};i="disable track track_pageview track_links track_forms register register_once alias unregister identify name_tag set_config people.set people.set_once people.increment people.append people.track_charge people.clear_charges people.delete_user".split(" ");for(g=0;g<i.length;g++)f(c,i[g]);b._i.push([a,e,d])};b.__SV=1.2}})(document,window.mixpanel||[]);
           mixpanel.init("#{@token}");
           mixpanel.set_config(#{@options[:config].to_json});
         </script>
@@ -125,7 +127,7 @@ module Mixpanel
 
     def merge_queue!
       present_hash = {}
-      special_events = ['identify', 'name_tag', 'people.set', 'register']
+      special_events = ['alias', 'identify', 'name_tag', 'people.set', 'register']
       queue.uniq!
 
       queue.reverse_each do |item|
